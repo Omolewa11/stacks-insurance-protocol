@@ -108,3 +108,52 @@
     (ok policy-id)
   ))
 )
+
+;; Submit an Insurance Claim
+(define-public (submit-claim 
+  (policy-id uint)
+  (claim-amount uint)
+)
+  (let (
+    (policy (unwrap! 
+      (map-get? insurance-policies 
+        { policy-id: policy-id, owner: tx-sender }
+      ) 
+      ERR-POLICY-NOT-FOUND
+    ))
+    (current-block (var-get current-block-height))
+  )
+  (begin
+    ;; Validate policy is active
+    (asserts! (get is-active policy) ERR-INVALID-CLAIM)
+
+    ;; Check policy hasn't expired
+    (asserts! (< current-block (get expiry-block policy)) ERR-INVALID-CLAIM)
+
+    ;; Check claim amount doesn't exceed coverage
+    (asserts! (<= claim-amount (get coverage-amount policy)) ERR-INVALID-CLAIM)
+
+    ;; Check no previous claim exists
+    (asserts! 
+      (is-none 
+        (map-get? insurance-claims 
+          { policy-id: policy-id, claimer: tx-sender }
+        )
+      ) 
+      ERR-ALREADY-CLAIMED
+    )
+
+    ;; Record claim
+    (map-set insurance-claims
+      { policy-id: policy-id, claimer: tx-sender }
+      {
+        claim-amount: claim-amount,
+        claim-status: "PENDING",
+        claim-block: current-block,
+        approved: false
+      }
+    )
+
+    (ok true)
+  ))
+)
