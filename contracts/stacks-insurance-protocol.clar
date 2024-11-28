@@ -157,3 +157,72 @@
     (ok true)
   ))
 )
+
+;; Approve or Reject Claim (Only by DAO or Governance)
+(define-public (process-claim 
+  (policy-id uint)
+  (claimer principal)
+  (is-approved bool)
+)
+  (let (
+    (claim (unwrap! 
+      (map-get? insurance-claims 
+        { policy-id: policy-id, claimer: claimer }
+      ) 
+      ERR-POLICY-NOT-FOUND
+    ))
+    (policy (unwrap! 
+      (map-get? insurance-policies 
+        { policy-id: policy-id, owner: claimer }
+      ) 
+      ERR-POLICY-NOT-FOUND
+    ))
+  )
+  (begin
+    ;; Ensure only contract owner can process claims (can be replaced with DAO mechanism)
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
+
+    ;; Update claim status
+    (map-set insurance-claims
+      { policy-id: policy-id, claimer: claimer }
+      (merge claim { 
+        claim-status: (if is-approved "APPROVED" "REJECTED"),
+        approved: is-approved 
+      })
+    )
+
+    ;; If approved, transfer funds
+    (if is-approved
+      (try! (as-contract (stx-transfer? (get claim-amount claim) tx-sender claimer)))
+      false
+    )
+
+    (ok true)
+  ))
+)
+
+;; Withdraw Expired Premiums
+(define-public (withdraw-expired-premiums)
+  (begin
+    ;; Only contract owner can withdraw
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
+
+    ;; Transfer accumulated premiums
+    (try! (as-contract (stx-transfer? (var-get premium-pool) tx-sender CONTRACT-OWNER)))
+
+    ;; Reset premium pool
+    (var-set premium-pool u0)
+
+    (ok true)
+  ))
+
+
+;; Contract Initialization
+(define-private (initialize)
+  (begin
+    (var-set next-policy-id u1)
+    (var-set premium-pool u0)
+    (var-set current-block-height u1)
+    true
+  )
+)
